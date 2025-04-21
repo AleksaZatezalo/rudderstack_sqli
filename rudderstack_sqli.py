@@ -9,7 +9,6 @@ import requests
 import json
 import socket
 import urllib3
-import sys
 import argparse
 
 # Suppress insecure request warnings
